@@ -8,7 +8,7 @@ A Streamlit pipeline that reads SEC filing URLs and questions from a Google Shee
 
 ## Streamlit app
 
-Upload a Google service account JSON and your OpenAI key in the app, then run the pipeline.
+Upload a Google service account JSON, pick OpenAI or NVIDIA (free) and paste (or upload) your key in the sidebar, then run the pipeline.
 
 ```bash
 pip install -r requirements.txt
