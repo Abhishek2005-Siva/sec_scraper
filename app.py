@@ -49,6 +49,26 @@ except ImportError as e:
 # Defaults / Config
 # ----------------------------
 MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
+BASE_URL = None  # None = OpenAI. Set from the sidebar provider (NVIDIA's free API is OpenAI-compatible).
+PROVIDERS = {
+    "OpenAI": {
+        "base_url": None,
+        "models": ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"],
+        "hint": "sk-…",
+    },
+    "NVIDIA (free)": {
+        "base_url": "https://integrate.api.nvidia.com/v1",
+        "models": ["nvidia/nemotron-3-super-120b-a12b", "nvidia/nemotron-nano-3-30b-a3b",
+                   "mistralai/mistral-large-2-instruct"],
+        "hint": "nvapi-…  (free key at build.nvidia.com)",
+    },
+}
+
+
+def _apply_provider(provider: str, model: str) -> None:
+    global MODEL, BASE_URL
+    MODEL = model
+    BASE_URL = PROVIDERS[provider]["base_url"]
 MAX_CONTEXT_TOKENS = 128000
 USER_AGENT = (
     "SEC-Filing-QA/1.0 "
@@ -423,7 +443,7 @@ def initialize_openai(api_key: str):
 
     # Build clients list (OpenAI only)
     for k in keys:
-        CLIENTS.append(OpenAI(api_key=k))
+        CLIENTS.append(OpenAI(api_key=k, base_url=BASE_URL))
 
     # Default client (used when no thread-local client is set)
     client = CLIENTS[0]
@@ -981,7 +1001,7 @@ def initialize_openai(api_key: str):
 
     # Build clients list (OpenAI only)
     for k in keys:
-        CLIENTS.append(OpenAI(api_key=k))
+        CLIENTS.append(OpenAI(api_key=k, base_url=BASE_URL))
 
     # Default client (used when no thread-local client is set)
     client = CLIENTS[0]
@@ -1623,6 +1643,18 @@ def main():
         st.header("Configuration")
         st.markdown("<div class='mini'>Hover icons for tips.</div>", unsafe_allow_html=True)
         
+        st.subheader("LLM provider 🤖")
+        provider = st.selectbox("Provider", list(PROVIDERS), key="llm_provider")
+        model_choice = st.selectbox("Model", PROVIDERS[provider]["models"], key=f"llm_model_{provider}")
+        _apply_provider(provider, model_choice)
+        st.text_input(
+            "API key",
+            type="password",
+            placeholder=PROVIDERS[provider]["hint"],
+            key="pasted_api_key",
+            help="Paste a key here, or upload it as a .txt file below. Used in this session only.",
+        )
+
         # File uploaders
         st.subheader("Upload Credentials 🪪")
         
@@ -1634,9 +1666,9 @@ def main():
         )
         
         api_key_file = st.file_uploader(
-            "Primary OpenAI API Key (.txt)",
+            "Primary API Key (.txt, optional)",
             type=["txt"],
-            help="Upload a text file containing your OpenAI API key",
+            help="Upload a text file containing your OpenAI or NVIDIA API key",
             key="api_key"
         )
 
@@ -1646,7 +1678,7 @@ def main():
             "Upload one key per file",
             type=["txt"],
             accept_multiple_files=True,
-            help="Each file should contain exactly one OpenAI API key. Used concurrently, one URL per key.",
+            help="Each file should contain exactly one API key for the selected provider. Used concurrently, one URL per key.",
             key="extra_api_keys_files"
         )
         extra_keys = []
@@ -1754,9 +1786,18 @@ def main():
 
     # Early initialization so status reflects immediately
     # Initialize OpenAI once a key is available
+    pasted_key = (st.session_state.get("pasted_api_key") or "").strip()
+    client_sig = (st.session_state.get("llm_provider"), pasted_key)
+    if st.session_state.get("_client_sig") != client_sig:
+        # Provider or pasted key changed: drop clients built for the previous setting.
+        CLIENTS.clear()
+        st.session_state["_client_sig"] = client_sig
+        st.session_state.openai_connected = False
     if not CLIENTS:
         candidate_key = None
-        if 'api_key' in st.session_state and st.session_state.api_key is not None:
+        if pasted_key:
+            candidate_key = pasted_key
+        elif 'api_key' in st.session_state and st.session_state.api_key is not None:
             try:
                 data = st.session_state.api_key.getvalue()
             except Exception:

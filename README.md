@@ -6,6 +6,17 @@
 
 A Streamlit pipeline that reads SEC filing URLs and questions from a Google Sheet, fetches each filing, asks the questions with OpenAI, and writes the answers back to the sheet.
 
+## Streamlit app
+
+Upload a Google service account JSON, pick OpenAI or NVIDIA (free) and paste (or upload) your key in the sidebar, then run the pipeline.
+
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+**Deploy on Streamlit Community Cloud:** at [share.streamlit.io](https://share.streamlit.io) choose this repo, branch `main` and main file `app.py`.
+
 ## How it works
 
 1. **Connect:** upload a Google service account JSON and enter your OpenAI API key.
