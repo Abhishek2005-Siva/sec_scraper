@@ -5,6 +5,7 @@ Upload JSON credentials and API key file, then run the pipeline.
 """
 
 import os
+import sys
 import re
 import time
 import json
@@ -13,6 +14,9 @@ import html
 import urllib.request
 import streamlit as st
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # nvidia_picker.py lives next to this file
+from nvidia_picker import apply_pending_model, render_model_picker
 from typing import List, Dict, Tuple, Optional
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
@@ -1669,6 +1673,7 @@ def main():
         st.session_state.sheet_updated = False
     
     # Sidebar for file uploads
+    apply_pending_model("llm_model_NVIDIA (free)")
     with st.sidebar:
         st.header("Configuration")
         st.markdown("<div class='mini'>Hover icons for tips.</div>", unsafe_allow_html=True)
@@ -1684,6 +1689,8 @@ def main():
             key="pasted_api_key",
             help="Paste a key here, or upload it as a .txt file below. Used in this session only.",
         )
+        if provider.startswith("NVIDIA"):
+            render_model_picker((st.session_state.get("pasted_api_key") or "").strip(), models_for(provider))
 
         # File uploaders
         st.subheader("Upload Credentials 🪪")
