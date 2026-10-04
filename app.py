@@ -5,13 +5,18 @@ Upload JSON credentials and API key file, then run the pipeline.
 """
 
 import os
+import sys
 import re
 import time
 import json
 import tempfile
 import html
+import urllib.request
 import streamlit as st
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # nvidia_picker.py lives next to this file
+from nvidia_picker import apply_pending_model, render_model_picker
 from typing import List, Dict, Tuple, Optional
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
@@ -58,11 +63,40 @@ PROVIDERS = {
     },
     "NVIDIA (free)": {
         "base_url": "https://integrate.api.nvidia.com/v1",
-        "models": ["nvidia/nemotron-3-super-120b-a12b", "nvidia/nemotron-nano-3-30b-a3b",
-                   "mistralai/mistral-large-2-instruct"],
+        "models": [],  # filled live by nvidia_models()
         "hint": "nvapi-…  (free key at build.nvidia.com)",
     },
 }
+
+# NVIDIA's hosted lineup changes often (models get retired without notice), so read the live list.
+NVIDIA_MODELS_URL = "https://integrate.api.nvidia.com/v1/models"
+_NON_CHAT = re.compile(
+    r"embed|rerank|safety|guard|reward|parse|vlm|vision|clip|retriev|riva|neva|vila|kosmos|"
+    r"deplot|fuyu|video|cosmos|ising|starcoder", re.I)
+_PREFERRED = [
+    "mistralai/mistral-large-2-instruct",
+    "nvidia/llama-3.1-nemotron-70b-instruct",
+    "nvidia/nemotron-nano-3-30b-a3b",
+    "openai/gpt-oss-20b",
+]
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def nvidia_models() -> list[str]:
+    """Chat models NVIDIA is serving right now, preferred ones first. Falls back to a short list."""
+    try:
+        with urllib.request.urlopen(NVIDIA_MODELS_URL, timeout=8) as resp:
+            ids = [m["id"] for m in json.load(resp)["data"]]
+        chat = [i for i in ids if not _NON_CHAT.search(i)]
+        first = [m for m in _PREFERRED if m in chat]
+        return (first + [i for i in chat if i not in first]) or list(_PREFERRED)
+    except Exception:  # noqa: BLE001 - offline or endpoint changed
+        return list(_PREFERRED)
+
+
+def models_for(provider: str) -> list[str]:
+    return nvidia_models() if provider.startswith("NVIDIA") else PROVIDERS[provider]["models"]
+
 
 
 def _apply_provider(provider: str, model: str) -> None:
@@ -1639,13 +1673,14 @@ def main():
         st.session_state.sheet_updated = False
     
     # Sidebar for file uploads
+    apply_pending_model("llm_model_NVIDIA (free)")
     with st.sidebar:
         st.header("Configuration")
         st.markdown("<div class='mini'>Hover icons for tips.</div>", unsafe_allow_html=True)
         
         st.subheader("LLM provider 🤖")
         provider = st.selectbox("Provider", list(PROVIDERS), key="llm_provider")
-        model_choice = st.selectbox("Model", PROVIDERS[provider]["models"], key=f"llm_model_{provider}")
+        model_choice = st.selectbox("Model", models_for(provider), key=f"llm_model_{provider}")
         _apply_provider(provider, model_choice)
         st.text_input(
             "API key",
@@ -1654,6 +1689,8 @@ def main():
             key="pasted_api_key",
             help="Paste a key here, or upload it as a .txt file below. Used in this session only.",
         )
+        if provider.startswith("NVIDIA"):
+            render_model_picker((st.session_state.get("pasted_api_key") or "").strip(), models_for(provider))
 
         # File uploaders
         st.subheader("Upload Credentials 🪪")
